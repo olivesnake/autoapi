@@ -1,18 +1,23 @@
 # autoapi (WIP)
 
 go from from sqlite database to CRUD api in two lines of code
+currently just basic GET requests
 
 ```python
 from autoapi import App
 
 app = App("chinook.db")
-app.run(port=5000)
+app.run()
 ```
+
+### query all
 
 ```shell
 curl http://localhost:5000/genres
 ```
+
 ### output
+
 ```shell
 [{"GenreId": 1, "Name": "Rock"}, {"GenreId": 2, "Name": "Jazz"}, {"GenreId": 3, "Name": "Metal"}, 
 {"GenreId": 4, "Name": "Alternative & Punk"}, {"GenreId": 5, "Name": "Rock And Roll"}, {"GenreId": 6, "Name": "Blues"}, 
@@ -24,4 +29,14 @@ curl http://localhost:5000/genres
  {"GenreId": 21, "Name": "Drama"}, {"GenreId": 22, "Name": "Comedy"}, {"GenreId": 23, "Name": "Alternative"}, 
  {"GenreId": 24, "Name": "Classical"}, {"GenreId": 25, "Name": "Opera"}]
 
+```
+
+### query one
+```shell
+curl http://localhost:5000/genres/21
+```
+
+### output
+```shell
+{"GenreId": 21, "Name": "Drama"}
 ```
