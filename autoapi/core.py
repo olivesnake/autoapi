@@ -93,73 +93,72 @@ class App:
         :return: None
         """
         with client:
-            while 1:
-                req = client.recv(1024)
-                if not req:
-                    break
-                lines = req.split(b'\n')
-                request_line = lines[0].strip().decode()
-                # print(request_line)
-                headers = util.process_headers(lines[1:])
-                status = ''
-                # serve custom generated homepage
-                if request_line == "GET / HTTP/1.1":
-                    status = "HTTP/1.1 200 OK"
+            req = client.recv(1024)
+            if not req:
+                return
+            lines = req.split(b'\n')
+            request_line = lines[0].strip().decode()
+            # print(request_line)
+            headers = util.process_headers(lines[1:])
+            status = ''
+            # serve custom generated homepage
+            if request_line == "GET / HTTP/1.1":
+                status = "HTTP/1.1 200 OK"
 
-                method = request_line.split(" /", maxsplit=1)[0]
+            method = request_line.split(" /", maxsplit=1)[0]
 
-                matched = False
-                for pattern, ptype in self.patterns:
-                    result = re.search(pattern, request_line)
-                    if result is None:
-                        continue
-                    matched = True
-                    if ptype == SINGLE:
-                        table = re.search(r"(\w+)/\d+", request_line).group(1)
-                        pk = re.search(r"\w+/(\w+)", request_line).group(1)
-                        if method == GET:  # read item
-                            content = self.read_one(table, pk)
-                            response = util.create_http_response(
-                                content=content,
-                                headers={"Content-Type": "application/json"},
-                                code=200
-                            )
-                        elif method == PUT:  # modify item
-                            status = "HTTP/1.1 204 No Content"
-                        elif method == DELETE:  # delete item
-                            pk_column = self.get_primary_key_column(table)
-                            success = self.db.delete(table, where=f"{pk_column} = {pk}")
+            matched = False
+            for pattern, ptype in self.patterns:
+                result = re.search(pattern, request_line)
+                if result is None:
+                    continue
+                matched = True
+                if ptype == SINGLE:
+                    table = re.search(r"(\w+)/\d+", request_line).group(1)
+                    pk = re.search(r"\w+/(\w+)", request_line).group(1)
+                    if method == GET:  # read item
+                        content = self.read_one(table, pk)
+                        response = util.create_http_response(
+                            content=content,
+                            headers={"Content-Type": "application/json"},
+                            code=200
+                        )
+                    elif method == PUT:  # modify item
+                        status = "HTTP/1.1 204 No Content"
+                    elif method == DELETE:  # delete item
+                        pk_column = self.get_primary_key_column(table)
+                        success = self.db.delete(table, where=f"{pk_column} = {pk}")
 
-                            status = ""
-                        else:
-                            response = util.create_http_response(code=405)
-
-                        client.sendall(response)
-
+                        status = ""
                     else:
-                        table = result.group(0)
-                        if method == GET:  # return all
-                            content = self.read_all(table_name=table)
-                            response = util.create_http_response(
-                                content=content,
-                                headers={"Content-Type": "application/json"},
-                                code=200
-                            )
-                            client.sendall(response)
-                        elif method == POST:  # create new record
-                            pass
-                        else:
-                            response = util.create_http_response(code=405)
-                        client.sendall(response)
+                        response = util.create_http_response(code=405)
 
-                    break
-
-                if not matched:
-                    response = util.create_http_response(
-                        util.read_as_text(HOMEPAGE),
-                        code=404
-                    )
                     client.sendall(response)
+
+                else:
+                    table = result.group(0)
+                    if method == GET:  # return all
+                        content = self.read_all(table_name=table)
+                        response = util.create_http_response(
+                            content=content,
+                            headers={"Content-Type": "application/json"},
+                            code=200
+                        )
+                        client.sendall(response)
+                    elif method == POST:  # create new record
+                        pass
+                    else:
+                        response = util.create_http_response(code=405)
+                    client.sendall(response)
+
+                break
+
+            if not matched:
+                response = util.create_http_response(
+                    util.read_as_text(HOMEPAGE),
+                    code=404
+                )
+                client.sendall(response)
 
     def run(self, host: str = "localhost", port: int = 5000):
         """
@@ -171,10 +170,12 @@ class App:
         if host == '0.0.0.0':
             host = socket.gethostbyname(socket.gethostname())
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+            server.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             server.bind((host, port))
             server.listen()
             print(f"🚀 server listening on http://{host}:{port}")
             while 1:
                 sock, addr = server.accept()
-                thread = threading.Thread(target=self.handle, args=(sock, addr))
-                thread.start()
+                self.handle(sock, addr)
+                # thread = threading.Thread(target=self.handle, args=(sock, addr))
+                # thread.start()
