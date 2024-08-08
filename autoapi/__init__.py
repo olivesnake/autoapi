@@ -1,0 +1,131 @@
+import socket
+import functools
+import threading
+from sqrl import SQL
+import re
+import json
+from typing import List, Dict, Tuple
+
+GET = "GET"
+POST = "POST"
+DELETE = "DELETE"
+PUT = "PUT"
+SINGLE = 0
+ALL = 1
+
+
+def process_headers(request_lines: List[bytes]) -> Dict:
+    request_lines = b'\n'.join(request_lines).replace(b'\r', b'').split(b'\n')
+    header_dict = {}
+    for line in request_lines:
+        line = line.decode()
+        line = line.strip()
+        res = line.split(":", maxsplit=1)
+        if len(res) >= 2:
+            key, val = res
+            header_dict[key.strip()] = val.strip()
+    return header_dict
+
+
+def read_as_text(filename: str):
+    with open(filename, 'r') as file:
+        return file.read()
+
+
+class App:
+    def __init__(self, database: str, echo: bool = False):
+        self.db = SQL(database, echo=echo, check_same_thread=False)
+        self.tables = self.db.get_table_names()
+        self.patterns = []
+        try:
+            self.tables.remove('sqlite_sequence')
+            self.tables.remove('sqlite_stat1')
+            self.tables.remove('sqlite_master')
+        except ValueError:
+            pass
+        for t in self.tables:
+            all_path = rf"\b({re.escape(t)})\b(?!\w+)"
+            single_path = rf"{re.escape(t)}/(\w+)"
+            self.patterns.extend([(single_path, SINGLE), (all_path, ALL)])
+        print(self.patterns)
+
+    def read_all(self, table_name):
+        return json.dumps(self.db.select(table_name, return_as_dict=True))
+
+    @functools.lru_cache()
+    def get_primary_key_column(self, table_name):
+        result = self.db.fetch(f"PRAGMA table_info({table_name})")
+        primary_key_columns = [col[1] for col in result if col[5] == 1]
+        if len(primary_key_columns) < 1:
+            raise RuntimeError
+        return primary_key_columns[0]
+
+    def read_one(self, table_name, pk):
+        col = self.get_primary_key_column(table_name)
+
+        return json.dumps(
+            self.db.select(table_name, limit=1, return_as_dict=True, where="{} = {}".format(col, pk))
+        )
+
+    def handle(self, client: socket.socket, addr: tuple):
+        with client:
+            while 1:
+                req = client.recv(1024)
+                if not req:
+                    break
+                lines = req.split(b'\n')
+                request_line = lines[0].strip().decode()
+                # print(request_line)
+                headers = process_headers(lines[1:])
+                status = ''
+                # serve custom generated homepage
+                if request_line == "GET / HTTP/1.1":
+                    status = "HTTP/1.1 200 OK"
+
+                method = request_line.split(" /", maxsplit=1)[0]
+
+                for pattern, ptype in self.patterns:
+                    result = re.search(pattern, request_line)
+                    if result is None:
+                        continue
+
+                    if ptype == SINGLE:
+                        table = re.search(r"(\w+)/\d+", request_line).group(1)
+                        pk = re.search(r"\w+/(\w+)", request_line).group(1)
+                        if method == GET:
+                            content = self.read_one(table, pk)
+                            length = len(content)
+                            response = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {length}\r\n\r\n{content}"
+                            client.sendall(response.encode("utf-8"))
+                            break
+                    else:
+                        table = result.group(0)
+                        if method == GET:
+                            content = self.read_all(table_name=table)
+                            length = len(content)
+                            response = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {length}\r\n\r\n{content}"
+                            client.sendall(response.encode("utf-8"))
+                            break
+
+                status = "HTTP/1.1 404 NOT FOUND"
+                data = read_as_text("index.html")
+                length = len(data)
+                response = f"{status}\r\nContent-Length: {length}\r\n\r\n{data}"
+                client.sendall(response.encode("utf-8"))
+
+    def run(self, host: str = "localhost", port: int = 5000):
+        if host == '0.0.0.0':
+            host = socket.gethostbyname(socket.gethostname())
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+            server.bind((host, port))
+            server.listen()
+            print(f"🚀 server listening on http://{host}:{port}")
+            while 1:
+                sock, addr = server.accept()
+                thread = threading.Thread(target=self.handle, args=(sock, addr))
+                thread.start()
+                thread.join()
+
+
+app = App("chinook.db")
+app.run()
