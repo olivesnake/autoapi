@@ -9,10 +9,9 @@ import re
 import socket
 import threading
 from typing import List, Dict
-
+from . import util
 from .sqrl import SQL
 
-GET = "GET"
 GET = "GET"
 POST = "POST"
 DELETE = "DELETE"
@@ -20,24 +19,6 @@ PUT = "PUT"
 SINGLE = 0
 ALL = 1
 HOMEPAGE = os.path.join(os.path.dirname(__file__), "index.html")
-
-
-def process_headers(request_lines: List[bytes]) -> Dict:
-    request_lines = b'\n'.join(request_lines).replace(b'\r', b'').split(b'\n')
-    header_dict = {}
-    for line in request_lines:
-        line = line.decode()
-        line = line.strip()
-        res = line.split(":", maxsplit=1)
-        if len(res) >= 2:
-            key, val = res
-            header_dict[key.strip()] = val.strip()
-    return header_dict
-
-
-def read_as_text(filename: str):
-    with open(filename, 'r') as file:
-        return file.read()
 
 
 class App:
@@ -113,7 +94,7 @@ class App:
                 lines = req.split(b'\n')
                 request_line = lines[0].strip().decode()
                 # print(request_line)
-                headers = process_headers(lines[1:])
+                headers = util.process_headers(lines[1:])
                 status = ''
                 # serve custom generated homepage
                 if request_line == "GET / HTTP/1.1":
@@ -130,27 +111,42 @@ class App:
                     if ptype == SINGLE:
                         table = re.search(r"(\w+)/\d+", request_line).group(1)
                         pk = re.search(r"\w+/(\w+)", request_line).group(1)
-                        if method == GET:
+                        if method == GET:  # read item
                             content = self.read_one(table, pk)
-                            length = len(content)
-                            response = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {length}\r\n\r\n{content}"
-                            client.sendall(response.encode("utf-8"))
-                            break
+                            response = util.create_http_response(
+                                content=content,
+                                headers={"Content-Type": "application/json"},
+                                code=200
+                            )
+                            client.sendall(response)
+                        elif method == PUT:  # modify item
+                            status = "HTTP/1.1 204 No Content"
+                        elif method == DELETE:  # delete item
+                            pk_column = self.get_primary_key_column(table)
+                            success = self.db.delete(table, where=f"{pk_column} = {pk}")
+
+                            status = ""
+
                     else:
                         table = result.group(0)
-                        if method == GET:
+                        if method == GET:  # return all
                             content = self.read_all(table_name=table)
-                            length = len(content)
-                            response = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {length}\r\n\r\n{content}"
-                            client.sendall(response.encode("utf-8"))
-                            break
+                            response = util.create_http_response(
+                                content=content,
+                                headers={"Content-Type": "application/json"},
+                                code=200
+                            )
+                            client.sendall(response)
+                        elif method == POST:  # create new record
+                            pass
+                    break
 
                 if not matched:
-                    status = "HTTP/1.1 404 NOT FOUND"
-                    data = read_as_text(HOMEPAGE)
-                    length = len(data)
-                    response = f"{status}\r\nContent-Length: {length}\r\n\r\n{data}"
-                    client.sendall(response.encode("utf-8"))
+                    response = util.create_http_response(
+                        util.read_as_text(HOMEPAGE),
+                        code=404
+                    )
+                    client.sendall(response)
 
     def run(self, host: str = "localhost", port: int = 5000):
         """
