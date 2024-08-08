@@ -2,14 +2,15 @@
 Oliver Aug 2024
 """
 
-import os.path
-import socket
 import functools
-import threading
-from .sqrl import SQL
-import re
 import json
-from typing import List, Dict, Tuple
+import os.path
+import re
+import socket
+import threading
+from typing import List, Dict
+
+from .sqrl import SQL
 
 GET = "GET"
 GET = "GET"
