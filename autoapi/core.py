@@ -8,7 +8,7 @@ import os.path
 import re
 import socket
 import threading
-from typing import List, Dict
+
 from . import util
 from .sqrl import SQL
 
@@ -37,10 +37,16 @@ class App:
             self.tables.remove('sqlite_master')
         except ValueError:
             pass
+        print("endpoints: ")
         for t in self.tables:
             all_path = rf"\b({re.escape(t)})\b(?!\w+)"
             single_path = rf"{re.escape(t)}/(\w+)"
             self.patterns.extend([(single_path, SINGLE), (all_path, ALL)])
+            print(f"-- GET /{t}")
+            print(f"-- POST /{t}")
+            print(f"-- GET /{t}/<pk>")
+            print(f"-- PUT /{t}/<pk>")
+            print(f"-- DELETE /{t}/<pk>")
 
     def read_all(self, table_name):
         """
@@ -118,7 +124,6 @@ class App:
                                 headers={"Content-Type": "application/json"},
                                 code=200
                             )
-                            client.sendall(response)
                         elif method == PUT:  # modify item
                             status = "HTTP/1.1 204 No Content"
                         elif method == DELETE:  # delete item
@@ -126,6 +131,10 @@ class App:
                             success = self.db.delete(table, where=f"{pk_column} = {pk}")
 
                             status = ""
+                        else:
+                            response = util.create_http_response(code=405)
+
+                        client.sendall(response)
 
                     else:
                         table = result.group(0)
@@ -139,6 +148,10 @@ class App:
                             client.sendall(response)
                         elif method == POST:  # create new record
                             pass
+                        else:
+                            response = util.create_http_response(code=405)
+                        client.sendall(response)
+
                     break
 
                 if not matched:
