@@ -10,13 +10,13 @@ app = App("chinook.db")
 app.run()
 ```
 
-### query all
+### GET requests
 
 ```shell
 curl http://localhost:5000/genres
 ```
 
-### output
+#### output
 
 ```shell
 [{"GenreId": 1, "Name": "Rock"}, {"GenreId": 2, "Name": "Jazz"}, {"GenreId": 3, "Name": "Metal"}, 
@@ -31,12 +31,18 @@ curl http://localhost:5000/genres
 
 ```
 
-### query one
 ```shell
 curl http://localhost:5000/genres/21
 ```
 
-### output
+#### output
+
 ```shell
 {"GenreId": 21, "Name": "Drama"}
+```
+
+
+### PUT requests
+```shell
+curl -X PUT http://localhost:5000/artists/1 -H "Content-Type: application/json" -d '{"Name": "AC/DCB"}'
 ```

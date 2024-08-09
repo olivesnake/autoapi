@@ -1,4 +1,5 @@
 from typing import Dict, Any, List
+import json
 
 STATUS_MAP = {
     200: "HTTP/1.1 200 OK",
@@ -56,3 +57,15 @@ def create_http_response(content: Any = '', headers: Dict[str, str] | None = Non
     response += f"\r\nContent-Length: {len(content)}\r\n\r\n"
     response += content
     return response.encode("utf-8")
+
+
+def extract_json(request: bytes) -> Dict[str, Any]:
+    """
+    extract json data from HTTP request bytes into a
+    python dictionary object,
+    assumes content-type is application/json
+    :param request: HTTP request in bytes
+    :return: dictionary of JSON
+    """
+    content = request.rsplit(b"\r\n\r\n").pop().decode()
+    return json.loads(content)

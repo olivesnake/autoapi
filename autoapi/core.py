@@ -37,16 +37,11 @@ class App:
             self.tables.remove('sqlite_master')
         except ValueError:
             pass
-        # print("endpoints: ")
+        self.primary_keys = {t: self.get_primary_key_column(t) for t in self.tables}
         for t in self.tables:
             all_path = rf"\b({re.escape(t)})\b(?!\w+)"
             single_path = rf"{re.escape(t)}/(\w+)"
             self.patterns.extend([(single_path, SINGLE), (all_path, ALL)])
-            # print(f"-- GET /{t}")
-            # print(f"-- POST /{t}")
-            # print(f"-- GET /{t}/<pk>")
-            # print(f"-- PUT /{t}/<pk>")
-            # print(f"-- DELETE /{t}/<pk>")
 
     def read_all(self, table_name):
         """
@@ -56,7 +51,6 @@ class App:
         """
         return json.dumps(self.db.select(table_name, return_as_dict=True))
 
-    @functools.lru_cache()
     def get_primary_key_column(self, table_name: str) -> str:
         """
         returns the name of the first
@@ -79,7 +73,7 @@ class App:
         :param pk: value to search for the item by
         :return: json stringified result
         """
-        col = self.get_primary_key_column(table_name)
+        col = self.primary_keys[table_name]
 
         return json.dumps(
             self.db.select(table_name, limit=1, return_as_dict=True, where="{} = {}".format(col, pk))
@@ -93,12 +87,11 @@ class App:
         :return: None
         """
         with client:
-            req = client.recv(1024)
-            if not req:
+            request = client.recv(1024)
+            if not request:
                 return
-            lines = req.split(b'\n')
+            lines = request.split(b'\n')
             request_line = lines[0].strip().decode()
-            # print(request_line)
             headers = util.process_headers(lines[1:])
             status = ''
             # serve custom generated homepage
@@ -116,7 +109,7 @@ class App:
                 if ptype == SINGLE:
                     table = re.search(r"(\w+)/\d+", request_line).group(1)
                     pk = re.search(r"\w+/(\w+)", request_line).group(1)
-                    pk_column = self.get_primary_key_column(table)
+                    pk_column = self.primary_keys[table]
                     if method == GET:  # read item
                         content = self.read_one(table, pk)
                         response = util.create_http_response(
@@ -128,8 +121,7 @@ class App:
                         if headers.get('Content-Type') != "application/json":
                             response = util.create_http_response(code=400)
                         else:
-                            content = req.rsplit(b"\r\n\r\n").pop().decode()
-                            content = json.loads(content)
+                            content = util.extract_json(request)
                             success = self.db.update(table, data=content, where=f"{pk_column} = {pk}")
                             status = 204 if success else 500
                             response = util.create_http_response(code=status)
@@ -140,9 +132,6 @@ class App:
                         response = util.create_http_response(code=status)
                     else:
                         response = util.create_http_response(code=405)
-
-                    client.sendall(response)
-
                 else:
                     table = result.group(0)
                     if method == GET:  # return all
@@ -156,15 +145,14 @@ class App:
                         if headers.get('Content-Type') != "application/json":
                             response = util.create_http_response(code=400)
                         else:
-                            content = req.rsplit(b"\r\n\r\n").pop().decode()
-                            content = json.loads(content)
+                            content = util.extract_json(request)
                             success = self.db.insert(table, data=content)
                             status = 201 if success else 500
                             response = util.create_http_response(code=status)
                     else:
                         response = util.create_http_response(code=405)
-                    client.sendall(response)
 
+                client.sendall(response)
                 break
 
             if not matched:
@@ -190,6 +178,6 @@ class App:
             print(f"🚀 server listening on http://{host}:{port}")
             while 1:
                 sock, addr = server.accept()
-                self.handle(sock, addr)
-                # thread = threading.Thread(target=self.handle, args=(sock, addr))
-                # thread.start()
+                # self.handle(sock, addr)
+                thread = threading.Thread(target=self.handle, args=(sock, addr))
+                thread.start()
