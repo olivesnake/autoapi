@@ -37,16 +37,16 @@ class App:
             self.tables.remove('sqlite_master')
         except ValueError:
             pass
-        print("endpoints: ")
+        # print("endpoints: ")
         for t in self.tables:
             all_path = rf"\b({re.escape(t)})\b(?!\w+)"
             single_path = rf"{re.escape(t)}/(\w+)"
             self.patterns.extend([(single_path, SINGLE), (all_path, ALL)])
-            print(f"-- GET /{t}")
-            print(f"-- POST /{t}")
-            print(f"-- GET /{t}/<pk>")
-            print(f"-- PUT /{t}/<pk>")
-            print(f"-- DELETE /{t}/<pk>")
+            # print(f"-- GET /{t}")
+            # print(f"-- POST /{t}")
+            # print(f"-- GET /{t}/<pk>")
+            # print(f"-- PUT /{t}/<pk>")
+            # print(f"-- DELETE /{t}/<pk>")
 
     def read_all(self, table_name):
         """
@@ -116,6 +116,7 @@ class App:
                 if ptype == SINGLE:
                     table = re.search(r"(\w+)/\d+", request_line).group(1)
                     pk = re.search(r"\w+/(\w+)", request_line).group(1)
+                    pk_column = self.get_primary_key_column(table)
                     if method == GET:  # read item
                         content = self.read_one(table, pk)
                         response = util.create_http_response(
@@ -124,12 +125,19 @@ class App:
                             code=200
                         )
                     elif method == PUT:  # modify item
-                        status = "HTTP/1.1 204 No Content"
+                        if headers.get('Content-Type') != "application/json":
+                            response = util.create_http_response(code=400)
+                        else:
+                            content = req.rsplit(b"\r\n\r\n").pop().decode()
+                            content = json.loads(content)
+                            success = self.db.update(table, data=content, where=f"{pk_column} = {pk}")
+                            status = 204 if success else 500
+                            response = util.create_http_response(code=status)
                     elif method == DELETE:  # delete item
-                        pk_column = self.get_primary_key_column(table)
-                        success = self.db.delete(table, where=f"{pk_column} = {pk}")
-
-                        status = ""
+                        success = self.db.execute(f"DELETE FROM {table} WHERE {pk_column} = ?;", pk,
+                                                  as_transaction=True)
+                        status = 200 if success else 500
+                        response = util.create_http_response(code=status)
                     else:
                         response = util.create_http_response(code=405)
 
@@ -144,9 +152,15 @@ class App:
                             headers={"Content-Type": "application/json"},
                             code=200
                         )
-                        client.sendall(response)
                     elif method == POST:  # create new record
-                        pass
+                        if headers.get('Content-Type') != "application/json":
+                            response = util.create_http_response(code=400)
+                        else:
+                            content = req.rsplit(b"\r\n\r\n").pop().decode()
+                            content = json.loads(content)
+                            success = self.db.insert(table, data=content)
+                            status = 201 if success else 500
+                            response = util.create_http_response(code=status)
                     else:
                         response = util.create_http_response(code=405)
                     client.sendall(response)
